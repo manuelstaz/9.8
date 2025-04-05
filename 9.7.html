@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patronato Zacualpan</title>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background: #f4f4f4;
+            margin: 1cm;
+            border: 1cm solid blue;
+            box-sizing: border-box;
+        }
+        .container {
+            max-width: 400px;
+            margin: auto;
+            padding: 20px;
+            background: white;
+            border: 5mm solid orange;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        input, button { width: 100%; padding: 10px; margin: 10px 0; }
+        canvas { max-width: 100%; }
+        #btn-regresar {
+            display: inline-block;
+            background-color: #ccc;
+            border: 2px solid #333;
+            border-radius: 5px;
+            width: 4cm;
+            height: 10mm;
+            font-weight: bold;
+        }
+        #ver-donadores-presidenta { background-color: green; color: white; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container" id="login-container">
+        <h2>Inicio de Sesión</h2>
+        <input type="text" id="username" placeholder="Nombre de usuario">
+        <input type="password" id="password" placeholder="Contraseña">
+        <button onclick="login()">Ingresar</button>
+        <button onclick="recuperarContrasena()">¿Olvidaste tu contraseña?</button>
+    </div>
+
+    <div class="container" id="dashboard" style="display:none;">
+        <h2 id="welcome-text"></h2>
+        <p>Saldo actual: <span id="saldo">$0</span></p>
+        <div id="admin-controls" style="display:none;">
+            <button onclick="agregarIngreso()">Agregar Ingreso</button>
+            <button onclick="registrarEgreso()">Registrar Egreso</button>
+            <button onclick="generarReporteMensual()">Reporte Ingresos y Egresos</button>
+            <button onclick="mostrarDonadores()">Ver Donadores</button>
+        </div>
+        <div id="presidente-controls" style="display:none;">
+            <button id="ver-donadores-presidenta" onclick="mostrarDonadores()">Ver Donadores</button>
+            <button onclick="generarReporteMensual()">Reporte Ingresos y Egresos</button>
+        </div>
+        <button id="btn-regresar" style="display:none;" onclick="location.reload()">REGRESA A INICIO</button>
+        <canvas id="balanceChart"></canvas>
+    </div>
+
+    <script>
+        let saldo = 0;
+        let folio = 1;
+        const admins = ["presidente", "tesorera", "secretario", "vocal1", "vocal2"];
+        let isAdmin = false;
+        let usuarioActual = "";
+        const usuarios = {
+            "presidente": "admin123",
+            "tesorera": "admin456",
+            "secretario": "admin789",
+            "vocal1": "admin321",
+            "vocal2": "admin654"
+        };
+        const donadores = {};
+        const ingresos = [];
+        const egresos = [];
+        const mensajesMotivadores = [
+            "¡Gracias por tu apoyo! Juntos hacemos la diferencia!",
+            "Tu generosidad equipa a nuestros héroes voluntarios!",
+            "Cada peso cuenta para la seguridad de nuestra comunidad!",
+            "Un pequeño aporte, un gran impacto en la protección civil!"
+        ];
+
+        function login() {
+            let username = document.getElementById('username').value.trim().toLowerCase();
+            let password = document.getElementById('password').value;
+
+            if (usuarios.hasOwnProperty(username) && usuarios[username] === password) {
+                document.getElementById('login-container').style.display = 'none';
+                document.getElementById('dashboard').style.display = 'block';
+                usuarioActual = username;
+
+                const nombreRol = username === 'tesorera' ? 'Tesorera' : username.charAt(0).toUpperCase() + username.slice(1);
+                document.getElementById('welcome-text').innerHTML = `<strong style="font-size: 1.5em;">Bienvenido(a) ${nombreRol}</strong>`;
+
+                if (username === "tesorera") {
+                    isAdmin = true;
+                    document.getElementById('admin-controls').style.display = 'block';
+                } else if (username === "presidente") {
+                    document.getElementById('presidente-controls').style.display = 'block';
+                } else {
+                    document.getElementById('btn-regresar').style.display = 'inline-block';
+                }
+            } else {
+                Swal.fire('Error', 'Usuario o contraseña incorrectos.', 'error');
+            }
+        }
+
+        function agregarIngreso() {
+            if (!isAdmin) return;
+            let nombre = prompt("Ingrese el nombre del donador:");
+            if (!nombre) return;
+            if (!donadores[nombre]) {
+                let telefono = prompt("Ingrese el número de teléfono:");
+                let poblacion = prompt("Ingrese la población:");
+                let montoDiario = parseFloat(prompt("¿Cuánto donará por mes?"));
+                if (isNaN(montoDiario) || montoDiario <= 0) return;
+                donadores[nombre] = { telefono, poblacion, saldo: 0, montoDiario };
+            }
+            let monto = parseFloat(prompt("Ingrese el monto del ingreso:"));
+            if (!isNaN(monto) && monto > 0) {
+                donadores[nombre].saldo += monto;
+                saldo += monto;
+                ingresos.push({ nombre, monto, fecha: new Date() });
+                actualizarSaldo();
+                generarRecibo(nombre, monto);
+            }
+        }
+
+        function registrarEgreso() {
+            if (!isAdmin) return;
+            let monto = parseFloat(prompt("Ingrese el monto del egreso:"));
+            if (isNaN(monto) || monto <= 0) return;
+
+            let motivo = prompt("Ingrese el motivo del pago:");
+            if (!motivo) return;
+
+            let input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.jpg,.jpeg,.png,.pdf';
+            input.onchange = () => {
+                saldo -= monto;
+                egresos.push({ motivo, monto, fecha: new Date() });
+                actualizarSaldo();
+                Swal.fire('Éxito', 'Egreso registrado con comprobante.', 'success');
+            };
+            input.click();
+        }
+
+        function actualizarSaldo() {
+            document.getElementById('saldo').innerText = `$${saldo}`;
+        }
+
+        function generarRecibo(nombre, monto) {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            doc.setDrawColor(0, 51, 153);
+            doc.setLineWidth(1);
+            doc.rect(5, 5, 200, 90);
+            doc.setDrawColor(255, 165, 0);
+            doc.rect(7, 7, 196, 86);
+            doc.setTextColor(0, 0, 0);
+            doc.setFontSize(16);
+            doc.text("RECIBO DE DONACIÓN", 70, 20);
+            doc.setFontSize(12);
+            doc.text(`Folio: ${folio.toString().padStart(3, '0')}`, 150, 30);
+            doc.text(`Fecha: ${new Date().toLocaleDateString()}`, 10, 40);
+            doc.text(`Recibí de: ${nombre}`, 10, 50);
+            doc.text(`Cantidad: $${monto}`, 10, 60);
+            doc.text("Forma de pago: Efectivo", 10, 70);
+            doc.text("Recibido por: Patronato Zacualpan", 10, 80);
+            let mensaje = mensajesMotivadores[Math.floor(Math.random() * mensajesMotivadores.length)];
+            doc.setFontSize(13);
+            doc.setFont("helvetica", "bolditalic");
+            doc.text(mensaje, 105, 91, { maxWidth: 180, align: "center" });
+            folio++;
+            doc.save(`Recibo_${nombre}.pdf`);
+        }
+
+        function mostrarDonadores() {
+            let lista = Object.entries(donadores).map(([nombre, data]) => {
+                return `${nombre}: $${data.saldo}`;
+            }).join('\n');
+            Swal.fire({ title: 'Donadores', text: lista || 'No hay donadores aún', icon: 'info', width: 600 });
+        }
+
+        function generarReporteMensual() {
+            let texto = `Reporte generado el: ${new Date().toLocaleDateString()}\n\n`;
+            texto += `Ingresos:\n`;
+            ingresos.forEach(i => texto += `- ${i.fecha.toLocaleDateString()}: ${i.nombre} donó $${i.monto}\n`);
+            texto += `\nEgresos:\n`;
+            egresos.forEach(e => texto += `- ${e.fecha.toLocaleDateString()}: $${e.monto} por ${e.motivo}\n`);
+            texto += `\nSaldo general: $${saldo}`;
+            Swal.fire({ title: 'Reporte Mensual', text: texto, width: 600 });
+        }
+    </script>
+</body>
+</html>
